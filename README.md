@@ -6,7 +6,7 @@ A real-time web console for [JNOS 2.0](https://en.wikipedia.org/wiki/NOS_(networ
 
 - **System Console** — live tail of the daily JNOS log (system, AX.25, and TCP events), with the last 5 lines loaded on startup and automatic rollover at midnight.
 - **AX.25 Trace** — live tail of `trace.log`.
-- **MHeard List** — stations heard, with interface, elapsed time since last heard (`DD:HH:MM:SS`), and byte count.
+- **JHeard List** — stations heard, with interface, elapsed time since last heard (`DD:HH:MM:SS`), and byte count.
 - **BBS / Mailbox Activity** — parsed `queue`/`deliver` events from `mail.log`, showing time, type, sender, recipient, and subject, newest first.
 - **Header stats** — real-time JNOS uptime (ticks continuously in the browser, resynced from `AxHeardFile`) and a live MBox Users count (tracked from `MBOX (...) login` / `exit` lines).
 
