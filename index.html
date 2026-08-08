@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>JNOS 2.0 Status Terminal</title>
+    <style>
+        body {
+            background-color: #121212;
+            color: #33ff00; /* Classic phosphor green */
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 10px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 50px 1fr 1fr;
+            gap: 10px;
+            height: 95vh;
+        }
+        .header {
+            grid-column: 1 / 3;
+            background: #1e1e1e;
+            border: 1px solid #33ff00;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .panel {
+            background: #000;
+            border: 1px solid #444;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; /* panel itself never scrolls */
+        }
+        .panel h2 {
+            margin-top: 0;
+            font-size: 1.1em;
+            border-bottom: 1px dashed #33ff00;
+            padding-bottom: 5px;
+            flex-shrink: 0; /* header stays put */
+        }
+        .panel-content {
+            overflow-y: auto; /* only this scrolls */
+            flex: 1;
+            min-height: 0; /* required for flex children to actually scroll */
+        }
+        table {
+            width: 100%;
+            text-align: left;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 4px;
+            border-bottom: 1px solid #222;
+        }
+        .log-entry { margin: 2px 0; }
+        .log-bbs { color: #7fffd4; }
+        .log-ax25 { color: #ffd700; }
+        .log-tcp { color: #66ccff; }
+        .disconnected { color: #ff4444; }
+        #bbs thead th, #mheard thead th {
+            position: sticky;
+            top: 0;
+            background: #000; /* must be opaque so scrolling rows don't show through */
+            z-index: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <span><strong>JNOS 2.0 Web Console</strong></span>
+        <!-- NOTE: socket-count still has no backend data source. Uptime and
+             MBox Users are both wired up now. -->
+        <span id="uptime">Uptime: --</span>
+        <span id="socket-count">Sockets: --</span>
+        <span id="mbox-users">MBox Users: --</span>
+        <span id="conn-status">●</span>
+        <span style="font-size: 0.7em; opacity: 0.55;">vibe coded by K1YMI</span>
+    </div>
+
+    <div class="panel" id="console">
+        <h2>System Console</h2>
+        <div class="panel-content" id="console-log"></div>
+    </div>
+
+    <div class="panel" id="sockets">
+        <h2>AX.25 Trace</h2>
+        <div class="panel-content" id="trace-log"></div>
+    </div>
+
+    <div class="panel" id="mheard">
+        <h2>JHeard List</h2>
+        <div class="panel-content">
+            <table>
+                <thead>
+                    <tr><th>Callsign</th><th>Interface</th><th>Time</th><th>Packets</th></tr>
+                </thead>
+                <tbody id="mheard-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="panel" id="bbs">
+        <h2>BBS / Mailbox Activity</h2>
+        <div class="panel-content">
+            <table>
+                <thead>
+                    <tr><th>Time</th><th>Type</th><th>From</th><th>To</th><th>Subject</th></tr>
+                </thead>
+                <tbody id="mail-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const consoleLog = document.getElementById('console-log');
+        const traceLog = document.getElementById('trace-log');
+        const mailBody = document.getElementById('mail-body');
+        const mheardBody = document.getElementById('mheard-body');
+        const connStatus = document.getElementById('conn-status');
+        const mboxUsersSpan = document.getElementById('mbox-users');
+        const uptimeSpan = document.getElementById('uptime');
+
+        const MAX_VISIBLE_LOG_LINES = 200;
+        const MAX_VISIBLE_MAIL_ROWS = 200;
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function appendLogEntry(entry, container) {
+            const div = document.createElement('div');
+            div.className = 'log-entry log-' + entry.category;
+            div.textContent = entry.text;
+            container.appendChild(div);
+            while (container.children.length > MAX_VISIBLE_LOG_LINES) {
+                container.removeChild(container.firstChild);
+            }
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function appendTraceLine(entry) {
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            div.textContent = entry.text;
+            traceLog.appendChild(div);
+            while (traceLog.children.length > MAX_VISIBLE_LOG_LINES) {
+                traceLog.removeChild(traceLog.firstChild);
+            }
+            traceLog.scrollTop = traceLog.scrollHeight;
+        }
+
+        function renderMheard(list) {
+            mheardBody.innerHTML = '';
+            list.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `<td>${escapeHtml(item.callsign)}</td>
+                                 <td>${escapeHtml(item.interface)}</td>
+                                 <td>${escapeHtml(item.time)}</td>
+                                 <td>${escapeHtml(item.packets)}</td>`;
+                mheardBody.appendChild(tr);
+            });
+        }
+
+        function truncateFrom(from) {
+            const idx = from.search(/[%@]/);
+            return idx === -1 ? from : from.slice(0, idx);
+        }
+
+        // Mirrors the server's formatElapsed - keeps DD:HH:MM:SS display consistent
+        function formatElapsed(totalSeconds) {
+            if (!Number.isFinite(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
+            const pad = (n) => String(n).padStart(2, '0');
+            const days = Math.floor(totalSeconds / 86400);
+            const hours = Math.floor((totalSeconds % 86400) / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = Math.floor(totalSeconds % 60);
+            return `${pad(days)}:${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+        }
+
+        // Ticks forward locally every second instead of only updating when the
+        // server happens to push a new reading (which is tied to AxHeardFile's
+        // own update cadence, not a steady clock). Resyncs to the server's real
+        // value on every uptime_update so it can't drift over time.
+        let uptimeBaseSeconds = 0;
+        let uptimeBaseReceivedAt = Date.now();
+
+        function renderUptime() {
+            const elapsedSinceSync = Math.floor((Date.now() - uptimeBaseReceivedAt) / 1000);
+            uptimeSpan.textContent = 'Uptime: ' + formatElapsed(uptimeBaseSeconds + elapsedSinceSync);
+        }
+
+        setInterval(renderUptime, 1000);
+
+        function appendMailRow(entry) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${escapeHtml(entry.timestamp)}</td>
+                             <td>${escapeHtml(entry.type)}</td>
+                             <td>${escapeHtml(truncateFrom(entry.from))}</td>
+                             <td>${escapeHtml(entry.to)}</td>
+                             <td>${escapeHtml(entry.subject)}</td>`;
+            mailBody.insertBefore(tr, mailBody.firstChild); // newest at top
+            while (mailBody.children.length > MAX_VISIBLE_MAIL_ROWS) {
+                mailBody.removeChild(mailBody.lastChild); // trim oldest, now at the bottom
+            }
+            mailBody.parentElement.scrollTop = 0; // keep newest entry in view
+        }
+
+        socket.on('connect', () => {
+            connStatus.textContent = '●';
+            connStatus.style.color = '#33ff00';
+        });
+
+        socket.on('disconnect', () => {
+            connStatus.textContent = '●';
+            connStatus.className = 'disconnected';
+        });
+
+        // Bulk backfill on initial load / reconnect
+        socket.on('log_history', (entries) => {
+            consoleLog.innerHTML = '';
+            entries.forEach(entry => appendLogEntry(entry, consoleLog));
+        });
+
+        socket.on('mail_history', (entries) => {
+            mailBody.innerHTML = '';
+            entries.forEach(entry => appendMailRow(entry));
+        });
+
+        socket.on('trace_history', (entries) => {
+            traceLog.innerHTML = '';
+            entries.forEach(entry => appendTraceLine(entry));
+        });
+
+        socket.on('mheard_update', renderMheard);
+
+        socket.on('mbox_users_update', (count) => {
+            mboxUsersSpan.textContent = 'MBox Users: ' + count;
+        });
+
+        socket.on('uptime_update', (seconds) => {
+            uptimeBaseSeconds = seconds;
+            uptimeBaseReceivedAt = Date.now();
+            renderUptime();
+        });
+
+        // Live line-by-line updates
+        socket.on('jnos_update', (entry) => {
+            appendLogEntry(entry, consoleLog);
+        });
+
+        socket.on('mail_update', (entry) => {
+            appendMailRow(entry);
+        });
+
+        socket.on('trace_update', (entry) => {
+            appendTraceLine(entry);
+        });
+    </script>
+</body>
+</html>
