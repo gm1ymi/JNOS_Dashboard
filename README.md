@@ -2,7 +2,7 @@
 
 > Vibe coded by K1YMI.
 
-A real-time web console for [JNOS 2.0](https://en.wikipedia.org/wiki/NOS_(networking_software)) packet radio systems. Tails your JNOS logs and spool files and streams updates to a browser dashboard over WebSockets — no page refresh needed.
+A real-time web console for [JNOS 2.0](https://www.langelaar.net/) packet radio systems. Tails your JNOS logs and spool files and streams updates to a browser dashboard over WebSockets — no page refresh needed.
 
 ## Features
 
