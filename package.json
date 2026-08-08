@@ -1,0 +1,14 @@
+{
+  "name": "jnos-dashboard",
+  "version": "1.0.0",
+  "description": "Real-time web dashboard for JNOS 2.0 packet radio software",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "tail": "^2.2.6"
+  }
+}
