@@ -209,5 +209,4 @@ This is safe to do while the dashboard is running: the `tail` npm package detect
 
 ## Known limitations
 
-- **Active socket / port state** has no wired data source yet — JNOS doesn't expose this as a simple file the way JHeard and the logs are read here.
-- **MBox Users** count starts at 0 on server startup and is seeded only from the last 5 lines of the day's log, so a user already logged in before the dashboard started won't be reflected until they log out and back in.
+- **MBox Users** count starts at 0 on server startup and is seeded only from the last 5 lines of the day's log, so a user already logged in before the dashboard started won't be reflected until they log out and back in. It also only shows the last log in only.
