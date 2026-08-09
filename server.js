@@ -302,7 +302,7 @@ function checkAx25Status(line) {
     if (setupMatch) {
         lastAx25Status = {
             callsign: setupMatch[1],
-            version: setupMatch[2] === 'SABME' ? 'vr2.2' : 'vr1'
+            version: setupMatch[2] === 'SABME' ? 'vr2.2' : 'vr2.0'
         };
         io.emit('ax25_status_update', lastAx25Status);
         return;
