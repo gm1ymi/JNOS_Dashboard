@@ -365,3 +365,38 @@ io.on('connection', (socket) => {
 server.listen(3000, () => {
     console.log(`JNOS Web Console running on port 3000`);
 });
+
+// --- GRACEFUL SHUTDOWN ---
+// systemctl stop/restart sends SIGTERM; Ctrl+C sends SIGINT. Without this,
+// Node exits immediately without stopping the Tail instances or the
+// AxHeardFile watcher, leaving dangling file watchers until the OS reclaims
+// them. Confirmed the 'tail' package exposes .unwatch() (already relied on
+// elsewhere in this file, in the daily log-rotation logic).
+let shuttingDown = false;
+
+function shutdown(signal) {
+    if (shuttingDown) return; // ignore a second signal while already exiting
+    shuttingDown = true;
+    console.log(`Received ${signal}, shutting down...`);
+
+    fs.unwatchFile(HEARD_FILE_PATH);
+    if (currentTail) currentTail.unwatch();
+    if (mailTail) mailTail.unwatch();
+    if (traceTail) traceTail.unwatch();
+
+    io.close();
+    server.close(() => {
+        console.log('Shutdown complete.');
+        process.exit(0);
+    });
+
+    // Safety net: force-exit if something hangs (e.g. a stuck socket)
+    // instead of leaving the process alive past its shutdown window.
+    setTimeout(() => {
+        console.error('Forced exit after shutdown timeout.');
+        process.exit(1);
+    }, 5000).unref();
+}
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
